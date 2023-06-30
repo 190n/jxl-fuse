@@ -72,6 +72,10 @@ pub const Decoder = struct {
         }
     }
 
+    pub fn closeInput(self: *Decoder) void {
+        jxl.JxlDecoderCloseInput(self.decoder);
+    }
+
     pub fn setJpegBuffer(self: *Decoder, buf: []u8) !void {
         if (isJxlError(jxl.JxlDecoderSetJPEGBuffer(self.decoder, buf.ptr, buf.len))) {
             return error.JxlSetJpegBufferError;
