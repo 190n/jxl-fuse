@@ -33,15 +33,45 @@ pub fn signatureCheck(buf: []const u8) Signature {
     return @enumFromInt(jxl.JxlSignatureCheck(buf.ptr, buf.len));
 }
 
+fn libjxlAlloc(context: ?*anyopaque, size: usize) callconv(.C) ?*anyopaque {
+    const allocator = @as(*std.mem.Allocator, @alignCast(@ptrCast(context.?))).*;
+    const new_size = @sizeOf(usize) + size;
+    const slice = allocator.alignedAlloc(u8, @alignOf(usize), new_size) catch return null;
+    @as(*usize, @ptrCast(slice.ptr)).* = size;
+    return @as(*anyopaque, @ptrCast(slice.ptr + @sizeOf(usize)));
+}
+
+fn libjxlFree(context: ?*anyopaque, maybe_address: ?*anyopaque) callconv(.C) void {
+    if (maybe_address) |address| {
+        const allocator = @as(*std.mem.Allocator, @alignCast(@ptrCast(context.?))).*;
+        const many_ptr: [*]u8 = @ptrCast(address);
+        const size_ptr: *usize = @alignCast(@ptrCast(many_ptr - @sizeOf(usize)));
+        const size = size_ptr.*;
+        allocator.free(@as([*]u8, @ptrCast(size_ptr))[0..(size + @sizeOf(usize))]);
+    }
+}
+
 pub const Decoder = struct {
     decoder: *jxl.JxlDecoder,
+    duped_allocator: *std.mem.Allocator,
 
     fn isJxlError(status: c_uint) bool {
         return @as(Status, @enumFromInt(status)) != Status.success;
     }
 
-    pub fn init() error{OutOfMemory}!Decoder {
-        return .{ .decoder = jxl.JxlDecoderCreate(null) orelse return error.OutOfMemory };
+    pub fn init(allocator: std.mem.Allocator) !Decoder {
+        const alloc_ptr = try allocator.create(std.mem.Allocator);
+        alloc_ptr.* = allocator;
+        const mgr: jxl.JxlMemoryManagerStruct = .{
+            .@"opaque" = @as(*anyopaque, @ptrCast(alloc_ptr)),
+            .alloc = libjxlAlloc,
+            .free = libjxlFree,
+        };
+        errdefer allocator.destroy(alloc_ptr);
+        return .{
+            .decoder = jxl.JxlDecoderCreate(&mgr) orelse return error.OutOfMemory,
+            .duped_allocator = alloc_ptr,
+        };
     }
 
     pub fn reset(self: *Decoder) void {
@@ -50,6 +80,7 @@ pub const Decoder = struct {
 
     pub fn deinit(self: *Decoder) void {
         jxl.JxlDecoderDestroy(self.decoder);
+        self.duped_allocator.destroy(self.duped_allocator);
         self.* = undefined;
     }
 

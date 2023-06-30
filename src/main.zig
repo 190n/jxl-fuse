@@ -58,7 +58,7 @@ fn jxlToJpeg(jxl_buffer: []const u8, allocator: std.mem.Allocator) ![]u8 {
         return error.NotJxlFile;
     }
 
-    var decoder = try libjxl.Decoder.init();
+    var decoder = try libjxl.Decoder.init(allocator);
     defer decoder.deinit();
 
     try decoder.setInput(jxl_buffer);
