@@ -53,24 +53,21 @@ fn libjxlFree(context: ?*anyopaque, maybe_address: ?*anyopaque) callconv(.C) voi
 
 pub const Decoder = struct {
     decoder: *jxl.JxlDecoder,
-    duped_allocator: *std.mem.Allocator,
+    allocator: *std.mem.Allocator,
 
     fn isJxlError(status: c_uint) bool {
         return @as(Status, @enumFromInt(status)) != Status.success;
     }
 
-    pub fn init(allocator: std.mem.Allocator) !Decoder {
-        const alloc_ptr = try allocator.create(std.mem.Allocator);
-        alloc_ptr.* = allocator;
+    pub fn init(allocator: *std.mem.Allocator) !Decoder {
         const mgr: jxl.JxlMemoryManagerStruct = .{
-            .@"opaque" = @as(*anyopaque, @ptrCast(alloc_ptr)),
+            .@"opaque" = @as(*anyopaque, @ptrCast(allocator)),
             .alloc = libjxlAlloc,
             .free = libjxlFree,
         };
-        errdefer allocator.destroy(alloc_ptr);
         return .{
             .decoder = jxl.JxlDecoderCreate(&mgr) orelse return error.OutOfMemory,
-            .duped_allocator = alloc_ptr,
+            .allocator = allocator,
         };
     }
 
@@ -80,7 +77,6 @@ pub const Decoder = struct {
 
     pub fn deinit(self: *Decoder) void {
         jxl.JxlDecoderDestroy(self.decoder);
-        self.duped_allocator.destroy(self.duped_allocator);
         self.* = undefined;
     }
 

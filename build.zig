@@ -27,6 +27,8 @@ pub fn build(b: *std.Build) void {
     exe.linkSystemLibrary("jxl");
     exe.linkSystemLibrary("fuse");
     exe.linkLibC();
+    exe.addCSourceFile("src/file_info_helper.c", &.{});
+    exe.addIncludePath("src");
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default

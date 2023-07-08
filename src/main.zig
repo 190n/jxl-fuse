@@ -25,10 +25,23 @@ pub fn main() !void {
 
     std.log.info("mounting {s} at {s}", .{ root_directory, std.os.argv[std.os.argv.len - 2] });
 
-    var user_data = fuse.FuseUserData{
+    var private_data = fuse.FusePrivateData{
         .allocator = allocator,
         .root_directory = root_directory,
     };
 
-    try libfuse.fuseMain(std.os.argv[0 .. std.os.argv.len - 1], &libfuse.ops, &user_data);
+    const operations = libfuse.generateFuseOps(
+        fuse.FusePrivateData,
+        std.fs.File,
+        std.fs.IterableDir,
+        std.os.FStatAtError || std.fs.File.OpenError || error{OutOfMemory},
+        .{
+            .getAttr = fuse.getAttr,
+            .openDir = fuse.openDir,
+            .releaseDir = fuse.releaseDir,
+            .readDir = fuse.readDir,
+        },
+    );
+
+    try libfuse.fuseMain(std.os.argv[0 .. std.os.argv.len - 1], &private_data, operations);
 }
