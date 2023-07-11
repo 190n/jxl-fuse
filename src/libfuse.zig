@@ -90,12 +90,12 @@ fn errorToErrno(input: anytype) i32 {
         error.WouldBlock => .AGAIN,
         error.OutOfMemory => .NOMEM,
         error.Unexpected => blk: {
-            std.debug.print("unexpected errno\n", .{});
+            std.log.err("unexpected errno\n", .{});
             break :blk @enumFromInt(255);
         },
         // these errors don't have corresponding errnos in zig std and may be windows-only
         error.SharingViolation, error.PipeBusy, error.InvalidHandle, error.InvalidUtf8 => |e| blk: {
-            std.debug.print("unexpected error: {s}\n", .{@errorName(e)});
+            std.log.err("unexpected error: {s}\n", .{@errorName(e)});
             break :blk @enumFromInt(255);
         },
     };
@@ -143,27 +143,27 @@ pub fn generateFuseOps(
     comptime implementations: FuseOps(PrivateData, FileHandle, DirectoryHandle, Error),
 ) *const c.fuse_operations_compat25 {
     const Helper = struct {
-        fn privateDataCast() *PrivateData {
+        fn getPrivateData() *PrivateData {
             return @ptrCast(@alignCast(c.fuse_get_context().*.private_data.?));
         }
 
-        fn storeDirectoryHandle(fi: *c.fuse_file_info, handle: DirectoryHandle) void {
+        fn storeHandle(comptime T: type, fi: *c.fuse_file_info, handle: T) void {
             c.storeHandle(
                 fi,
                 // bit-cast to same sized integer, and then expand to u64 if needed
-                @as(u64, @as(*const std.meta.Int(.unsigned, @sizeOf(DirectoryHandle) * 8), @ptrCast(&handle)).*),
+                @as(u64, @as(*const std.meta.Int(.unsigned, @sizeOf(T) * 8), @ptrCast(&handle)).*),
             );
         }
 
-        fn readDirectoryHandle(fi: *const c.fuse_file_info) DirectoryHandle {
-            const as_int: std.meta.Int(.unsigned, @sizeOf(DirectoryHandle) * 8) = @truncate(c.readHandle(fi));
-            return @as(*const DirectoryHandle, @ptrCast(&as_int)).*;
+        fn readHandle(comptime T: type, fi: *const c.fuse_file_info) T {
+            const as_int: std.meta.Int(.unsigned, @sizeOf(T) * 8) = @truncate(c.readHandle(fi));
+            return @as(*const T, @ptrCast(&as_int)).*;
         }
 
         fn fuseGetAttr(path: ?[*:0]const u8, statbuf: ?*c.struct_stat) callconv(.C) c_int {
             std.log.info("getattr: {?s}", .{path});
             const stat = implementations.getAttr.?(
-                privateDataCast(),
+                getPrivateData(),
                 std.mem.span(path.?),
             ) catch |e| return errorToErrno(e);
             comptime assertLayoutsCompatible(c.struct_stat, std.os.Stat);
@@ -225,22 +225,22 @@ pub fn generateFuseOps(
         fn fuseOpenDir(path: ?[*:0]const u8, fi: ?*c.fuse_file_info) callconv(.C) c_int {
             std.log.info("opendir: {?s}", .{path});
             const dir = implementations.openDir.?(
-                privateDataCast(),
+                getPrivateData(),
                 std.mem.span(path.?),
             ) catch |e| return errorToErrno(e);
-            storeDirectoryHandle(fi.?, dir);
+            storeHandle(DirectoryHandle, fi.?, dir);
             return 0;
         }
 
         fn fuseReleaseDir(path: ?[*:0]const u8, fi: ?*c.fuse_file_info) callconv(.C) c_int {
             std.log.info("releasedir: {?s}", .{path});
-            var handle = readDirectoryHandle(fi.?);
+            var handle = readHandle(DirectoryHandle, fi.?);
             implementations.releaseDir.?(
-                privateDataCast(),
+                getPrivateData(),
                 std.mem.span(path.?),
                 &handle,
             ) catch |e| return errorToErrno(e);
-            storeDirectoryHandle(fi.?, handle);
+            storeHandle(DirectoryHandle, fi.?, handle);
             return 0;
         }
 
@@ -254,9 +254,9 @@ pub fn generateFuseOps(
             _ = offset;
             std.log.info("readdir: {?s}", .{path});
 
-            const handle = readDirectoryHandle(fi.?);
+            const handle = readHandle(DirectoryHandle, fi.?);
             implementations.readDir.?(
-                privateDataCast(),
+                getPrivateData(),
                 std.mem.span(path.?),
                 Filler{ .buf = buf, .filler = filler.? },
                 handle,

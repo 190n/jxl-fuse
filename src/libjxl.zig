@@ -113,7 +113,3 @@ pub const Decoder = struct {
         return jxl.JxlDecoderReleaseJPEGBuffer(self.decoder);
     }
 };
-
-test {
-    std.debug.print("{any}\n", .{signatureCheck(&.{ 0x00, 0x00, 0x00, 0x0c })});
-}

@@ -3,6 +3,7 @@ const c = @cImport({
     @cInclude("limits.h");
 });
 const libfuse = @import("./libfuse.zig");
+const libjxl = @import("./libjxl.zig");
 
 pub const FusePrivateData = struct {
     allocator: std.mem.Allocator,
@@ -63,6 +64,19 @@ pub fn releaseDir(private_data: *FusePrivateData, path: [:0]const u8, dir: *std.
     dir.close();
 }
 
+fn checkValidJxl(dir: std.fs.Dir, sub_path: []const u8) !bool {
+    var file = try dir.openFile(sub_path, .{});
+    defer file.close();
+    // according to https://github.com/libjxl/libjxl/blob/c3a4f9ca89ae59c6265a2f1bf2a6d2a87a71fc16/lib/jxl/decode.cc#L114
+    // signature check never requires more than 12 bytes
+    var buf: [12]u8 = undefined;
+    const num_read = try file.readAll(&buf);
+    return switch (libjxl.signatureCheck(buf[0..num_read])) {
+        .Codestream, .Container => true,
+        else => false,
+    };
+}
+
 pub fn readDir(private_data: *FusePrivateData, path: [:0]const u8, filler: libfuse.Filler, dir: std.fs.IterableDir) !void {
     _ = path;
     _ = private_data;
@@ -74,6 +88,10 @@ pub fn readDir(private_data: *FusePrivateData, path: [:0]const u8, filler: libfu
         var buf: @TypeOf(it.buf) = undefined;
         @memcpy(buf[0..e.name.len], e.name);
         buf[e.name.len] = 0;
+        if (std.mem.endsWith(u8, e.name, ".jxl")) {
+            const is_jxl = checkValidJxl(dir.dir, e.name) catch continue;
+            if (!is_jxl) continue;
+        }
         changeJxlToJpg(buf[0..e.name.len]);
         try filler.fill(buf[0..e.name.len :0]);
     }

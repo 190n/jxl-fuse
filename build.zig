@@ -66,6 +66,12 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    unit_tests.linkSystemLibrary("jxl");
+    unit_tests.linkSystemLibrary("fuse");
+    unit_tests.linkLibC();
+    unit_tests.addCSourceFile("src/file_info_helper.c", &.{});
+    unit_tests.addIncludePath("src");
+
     const run_unit_tests = b.addRunArtifact(unit_tests);
 
     // Similar to creating the run step earlier, this exposes a `test` step to

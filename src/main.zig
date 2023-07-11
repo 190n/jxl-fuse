@@ -45,3 +45,7 @@ pub fn main() !void {
 
     try libfuse.fuseMain(std.os.argv[0 .. std.os.argv.len - 1], &private_data, operations);
 }
+
+comptime {
+    std.testing.refAllDeclsRecursive(@This());
+}
