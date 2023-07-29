@@ -53,15 +53,15 @@ fn libjxlFree(context: ?*anyopaque, maybe_address: ?*anyopaque) callconv(.C) voi
 
 pub const Decoder = struct {
     decoder: *jxl.JxlDecoder,
-    allocator: *std.mem.Allocator,
+    allocator: *const std.mem.Allocator,
 
     fn isJxlError(status: c_uint) bool {
         return @as(Status, @enumFromInt(status)) != Status.success;
     }
 
-    pub fn init(allocator: *std.mem.Allocator) !Decoder {
+    pub fn init(allocator: *const std.mem.Allocator) !Decoder {
         const mgr: jxl.JxlMemoryManagerStruct = .{
-            .@"opaque" = @as(*anyopaque, @ptrCast(allocator)),
+            .@"opaque" = @constCast(@ptrCast(allocator)),
             .alloc = libjxlAlloc,
             .free = libjxlFree,
         };

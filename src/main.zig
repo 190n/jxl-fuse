@@ -25,10 +25,8 @@ pub fn main() !void {
 
     std.log.info("mounting {s} at {s}", .{ root_directory, std.os.argv[std.os.argv.len - 2] });
 
-    var private_data = fuse.FusePrivateData{
-        .allocator = allocator,
-        .root_directory = root_directory,
-    };
+    // 256 MiB capacity
+    var private_data = fuse.FusePrivateData.init(allocator, root_directory, 256 * 1024 * 1024);
 
     const operations = libfuse.generateFuseOps(
         fuse.FusePrivateData,

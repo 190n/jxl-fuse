@@ -4,10 +4,20 @@ const c = @cImport({
 });
 const libfuse = @import("./libfuse.zig");
 const libjxl = @import("./libjxl.zig");
+const Cache = @import("./Cache.zig");
 
 pub const FusePrivateData = struct {
     allocator: std.mem.Allocator,
-    root_directory: []const u8 = "",
+    root_directory: []const u8,
+    cache: Cache,
+
+    pub fn init(allocator: std.mem.Allocator, root_directory: []const u8, cache_capacity: usize) FusePrivateData {
+        return .{
+            .allocator = allocator,
+            .root_directory = root_directory,
+            .cache = Cache.init(allocator, cache_capacity),
+        };
+    }
 };
 
 fn changeJpgToJxl(buf: []u8) void {
@@ -44,11 +54,16 @@ pub fn getAttr(private_data: *FusePrivateData, path: [:0]const u8) !std.os.Stat 
     var buf: [c.PATH_MAX]u8 = undefined;
     const real_path = realPath(&buf, private_data.root_directory, path);
 
-    return std.os.fstatatZ(
+    var stat = try std.os.fstatatZ(
         std.fs.cwd().fd,
         real_path.ptr,
         std.os.linux.AT.SYMLINK_NOFOLLOW,
     );
+
+    if (private_data.cache.getJpegBytesFromJxl(real_path, stat.mtim) catch null) |bytes| {
+        stat.size = @intCast(bytes.len);
+    }
+    return stat;
 }
 
 pub fn openDir(private_data: *FusePrivateData, path: [:0]const u8) !std.fs.IterableDir {
