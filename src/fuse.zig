@@ -18,7 +18,28 @@ pub const FusePrivateData = struct {
             .cache = Cache.init(allocator, cache_capacity),
         };
     }
+
+    pub fn deinit(self: *FusePrivateData) void {
+        self.cache.deinit();
+        self.* = undefined;
+    }
 };
+
+pub const operations = libfuse.generateFuseOps(
+    FusePrivateData,
+    std.fs.File,
+    std.fs.IterableDir,
+    std.os.FStatAtError || std.fs.File.OpenError || std.fs.File.PReadError || error{OutOfMemory},
+    .{
+        .getAttr = getAttr,
+        .openDir = openDir,
+        .releaseDir = releaseDir,
+        .readDir = readDir,
+        .open = open,
+        .release = release,
+        .read = read,
+    },
+);
 
 fn changeJpgToJxl(buf: []u8) void {
     if (std.mem.endsWith(u8, buf, ".jpg")) {
@@ -92,7 +113,7 @@ fn checkValidJxl(dir: std.fs.Dir, sub_path: []const u8) !bool {
     };
 }
 
-pub fn readDir(private_data: *FusePrivateData, path: [:0]const u8, filler: libfuse.Filler, dir: std.fs.IterableDir) !void {
+pub fn readDir(private_data: *FusePrivateData, path: [:0]const u8, filler: libfuse.Filler, dir: *std.fs.IterableDir) !void {
     _ = path;
     _ = private_data;
     var it = dir.iterate();
@@ -109,5 +130,34 @@ pub fn readDir(private_data: *FusePrivateData, path: [:0]const u8, filler: libfu
         }
         changeJxlToJpg(buf[0..e.name.len]);
         try filler.fill(buf[0..e.name.len :0]);
+    }
+}
+
+pub fn open(private_data: *FusePrivateData, path: [:0]const u8) !std.fs.File {
+    var buf: [c.PATH_MAX]u8 = undefined;
+    const real_path = realPath(&buf, private_data.root_directory, path);
+    return std.fs.openFileAbsoluteZ(real_path, .{});
+}
+
+pub fn release(private_data: *FusePrivateData, path: [:0]const u8, file: *std.fs.File) !void {
+    _ = path;
+    _ = private_data;
+    file.close();
+}
+
+pub fn read(private_data: *FusePrivateData, path: [:0]const u8, buf: []u8, offset: usize, file: *std.fs.File) !usize {
+    var path_buf: [c.PATH_MAX]u8 = undefined;
+    const real_path = realPath(&path_buf, private_data.root_directory, path);
+    const mtime = (try std.os.fstatatZ(
+        std.fs.cwd().fd,
+        real_path.ptr,
+        std.os.linux.AT.SYMLINK_NOFOLLOW,
+    )).mtim;
+    if (private_data.cache.getJpegBytesFromJxl(real_path, mtime) catch null) |jpeg_bytes| {
+        const read_amount = @min(buf.len, jpeg_bytes.len -| offset);
+        @memcpy(buf[0..read_amount], jpeg_bytes[offset .. offset + read_amount]);
+        return read_amount;
+    } else {
+        return file.preadAll(buf, offset);
     }
 }

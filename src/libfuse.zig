@@ -89,12 +89,24 @@ fn errorToErrno(input: anytype) i32 {
         error.FileBusy => .BUSY,
         error.WouldBlock => .AGAIN,
         error.OutOfMemory => .NOMEM,
+        error.InputOutput => .IO,
+        error.BrokenPipe => .PIPE,
+        error.ConnectionResetByPeer => .CONNRESET,
+        error.ConnectionTimedOut => .TIMEDOUT,
+        error.NotOpenForReading => .BADF,
+        error.Unseekable => .SPIPE,
         error.Unexpected => blk: {
             std.log.err("unexpected errno\n", .{});
             break :blk @enumFromInt(255);
         },
         // these errors don't have corresponding errnos in zig std and may be windows-only
-        error.SharingViolation, error.PipeBusy, error.InvalidHandle, error.InvalidUtf8 => |e| blk: {
+        error.SharingViolation,
+        error.PipeBusy,
+        error.InvalidHandle,
+        error.InvalidUtf8,
+        error.OperationAborted,
+        error.NetNameDeleted,
+        => |e| blk: {
             std.log.err("unexpected error: {s}\n", .{@errorName(e)});
             break :blk @enumFromInt(255);
         },
@@ -131,7 +143,10 @@ pub fn FuseOps(
         getAttr: ?*const fn (private_data: *PrivateData, path: [:0]const u8) Error!std.os.Stat = null,
         openDir: ?*const fn (private_data: *PrivateData, path: [:0]const u8) Error!DirectoryHandle = null,
         releaseDir: ?*const fn (private_data: *PrivateData, path: [:0]const u8, dir: *DirectoryHandle) Error!void = null,
-        readDir: ?*const fn (private_data: *PrivateData, path: [:0]const u8, filler: Filler, dir: DirectoryHandle) Error!void = null,
+        readDir: ?*const fn (private_data: *PrivateData, path: [:0]const u8, filler: Filler, dir: *DirectoryHandle) Error!void = null,
+        open: ?*const fn (private_data: *PrivateData, path: [:0]const u8) Error!FileHandle = null,
+        release: ?*const fn (private_data: *PrivateData, path: [:0]const u8, file: *FileHandle) Error!void = null,
+        read: ?*const fn (private_data: *PrivateData, path: [:0]const u8, buf: []u8, offset: usize, file: *FileHandle) Error!usize = null,
     };
 }
 
@@ -180,27 +195,44 @@ pub fn generateFuseOps(
 
         fn fuseOpen(path: ?[*:0]const u8, fi: ?*c.fuse_file_info) callconv(.C) c_int {
             std.log.info("open: {?s}", .{path});
-            _ = fi;
-            return -1;
+            const file = implementations.open.?(
+                getPrivateData(),
+                std.mem.span(path.?),
+            ) catch |e| return errorToErrno(e);
+            storeHandle(FileHandle, fi.?, file);
+            return 0;
         }
 
         fn fuseRead(
             path: ?[*:0]const u8,
-            buf: ?[*:0]u8,
+            buf: ?[*]u8,
             size: usize,
             offset: c.off_t,
             fi: ?*c.fuse_file_info,
         ) callconv(.C) c_int {
             std.log.info("read: {?s}, {} bytes, offset {}", .{ path, size, offset });
-            _ = fi;
-            _ = buf;
-            return -1;
+            var handle = readHandle(FileHandle, fi.?);
+            defer storeHandle(FileHandle, fi.?, handle);
+            const amount_read = implementations.read.?(
+                getPrivateData(),
+                std.mem.span(path.?),
+                buf.?[0..size],
+                std.math.cast(usize, offset) orelse return -@as(i32, @intFromEnum(std.os.E.INVAL)),
+                &handle,
+            ) catch |e| return errorToErrno(e);
+            return @intCast(amount_read);
         }
 
         fn fuseRelease(path: ?[*:0]const u8, fi: ?*c.fuse_file_info) callconv(.C) c_int {
             std.log.info("release: {?s}", .{path});
-            _ = fi;
-            return 1;
+            var handle = readHandle(FileHandle, fi.?);
+            defer storeHandle(FileHandle, fi.?, handle);
+            implementations.release.?(
+                getPrivateData(),
+                std.mem.span(path.?),
+                &handle,
+            ) catch |e| return errorToErrno(e);
+            return 0;
         }
 
         fn fuseGetXattr(
@@ -235,12 +267,12 @@ pub fn generateFuseOps(
         fn fuseReleaseDir(path: ?[*:0]const u8, fi: ?*c.fuse_file_info) callconv(.C) c_int {
             std.log.info("releasedir: {?s}", .{path});
             var handle = readHandle(DirectoryHandle, fi.?);
+            defer storeHandle(DirectoryHandle, fi.?, handle);
             implementations.releaseDir.?(
                 getPrivateData(),
                 std.mem.span(path.?),
                 &handle,
             ) catch |e| return errorToErrno(e);
-            storeHandle(DirectoryHandle, fi.?, handle);
             return 0;
         }
 
@@ -254,12 +286,13 @@ pub fn generateFuseOps(
             _ = offset;
             std.log.info("readdir: {?s}", .{path});
 
-            const handle = readHandle(DirectoryHandle, fi.?);
+            var handle = readHandle(DirectoryHandle, fi.?);
+            defer storeHandle(DirectoryHandle, fi.?, handle);
             implementations.readDir.?(
                 getPrivateData(),
                 std.mem.span(path.?),
                 Filler{ .buf = buf, .filler = filler.? },
-                handle,
+                &handle,
             ) catch |e| return errorToErrno(e);
             return 0;
         }
@@ -306,9 +339,9 @@ pub fn generateFuseOps(
 
             .getattr = if (implementations.getAttr) |_| fuseGetAttr else null,
             .readlink = fuseReadlink,
-            .open = fuseOpen,
-            .read = fuseRead,
-            .release = fuseRelease,
+            .open = if (implementations.open) |_| fuseOpen else null,
+            .read = if (implementations.read) |_| fuseRead else null,
+            .release = if (implementations.release) |_| fuseRelease else null,
             .getxattr = fuseGetXattr,
             .listxattr = fuseListXattr,
             .opendir = if (implementations.openDir) |_| fuseOpenDir else null,

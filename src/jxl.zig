@@ -33,8 +33,14 @@ const Buffers = struct {
     pub fn release(self: *Buffers, dec: *libjxl.Decoder) void {
         const unwritten_bytes = dec.releaseJpegBuffer();
         const bytes_in_last_chunk = self.last_chunk.len - unwritten_bytes;
+        std.log.info("libjxl gave us {} bytes", .{bytes_in_last_chunk});
+        if (self.full_buffer.len >= 16) {
+            std.log.info("first few bytes: {x:0>32}", .{std.mem.nativeToBig(u128, @as(u128, @bitCast(self.full_buffer[0..16].*)))});
+        }
         const before_last_chunk = self.full_buffer.len - self.last_chunk.len;
         self.used_buffer = self.full_buffer[0..(before_last_chunk + bytes_in_last_chunk)];
+
+        std.log.info("{} byte hash = {x:0>16}", .{ self.full_buffer.len, std.hash.XxHash64.hash(0, self.full_buffer) });
     }
 
     /// returns the chunk that can be provided to libjxl

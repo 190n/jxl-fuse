@@ -27,21 +27,9 @@ pub fn main() !void {
 
     // 256 MiB capacity
     var private_data = fuse.FusePrivateData.init(allocator, root_directory, 256 * 1024 * 1024);
+    defer private_data.deinit();
 
-    const operations = libfuse.generateFuseOps(
-        fuse.FusePrivateData,
-        std.fs.File,
-        std.fs.IterableDir,
-        std.os.FStatAtError || std.fs.File.OpenError || error{OutOfMemory},
-        .{
-            .getAttr = fuse.getAttr,
-            .openDir = fuse.openDir,
-            .releaseDir = fuse.releaseDir,
-            .readDir = fuse.readDir,
-        },
-    );
-
-    try libfuse.fuseMain(std.os.argv[0 .. std.os.argv.len - 1], &private_data, operations);
+    try libfuse.fuseMain(std.os.argv[0 .. std.os.argv.len - 1], &private_data, fuse.operations);
 }
 
 comptime {
