@@ -206,6 +206,7 @@ fn performCacheTest(allocator: std.mem.Allocator) !void {
     const botw_mtime = (try std.os.fstatatZ(std.fs.cwd().fd, "test-files/botw.jxl", 0)).mtim;
     const mountain_mtime = (try std.os.fstatatZ(std.fs.cwd().fd, "test-files/mountain.jxl", 0)).mtim;
     const dusk_mtime = (try std.os.fstatatZ(std.fs.cwd().fd, "test-files/dusk.jxl", 0)).mtim;
+    const trails_mtime = (try std.os.fstatatZ(std.fs.cwd().fd, "test-files/trails.jxl", 0)).mtim;
 
     const botw_hash = 0x09ba035d2163142c;
     const mountain_hash = 0x72084d799cc8eb36;
@@ -256,6 +257,20 @@ fn performCacheTest(allocator: std.mem.Allocator) !void {
     // ...and then add botw, to make sure that mountain gets evicted and not dusk
     botw_bytes = (try cache.getJpegBytesFromJxl("test-files/botw.jxl", botw_mtime)).?;
     try expectHashEqual(botw_hash, botw_bytes);
+    try expectStatsEqual(2, 6, 3, 1, botw_len + dusk_len, &cache);
+
+    // this file is too big for the cache we created
+    try std.testing.expectError(error.FileTooBig, cache.getJpegBytesFromJxl(
+        "test-files/trails.jxl",
+        trails_mtime,
+    ) catch |e| switch (e) {
+        // we have to bubble up this error (which happens when checkAllAllocationFailures makes
+        // allocating the buffer to hold the jxl contents fail even before we reach the capacity
+        // limit) as checkAllAllocationFailures requires error.OutOfMemory to be passed up
+        error.OutOfMemory => return e,
+        else => e,
+    });
+    // and the state should not have changed by doing that
     try expectStatsEqual(2, 6, 3, 1, botw_len + dusk_len, &cache);
 }
 
