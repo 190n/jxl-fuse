@@ -67,6 +67,12 @@ fn shrinkToFit(self: *Cache, incoming_capacity: usize) void {
         const item_to_remove = self.least_recently_used.removeOrNull().?;
         const table_entry = self.contents.get(item_to_remove.path).?;
         self.size -= table_entry.decoded_bytes.len;
+        std.log.scoped(.cache).debug("evict {s} ({} bytes) -> {}/{} bytes used", .{
+            item_to_remove.path,
+            table_entry.decoded_bytes.len,
+            self.size,
+            self.capacity,
+        });
         std.debug.assert(self.contents.remove(item_to_remove.path) == true);
         self.allocator.free(item_to_remove.path);
         self.allocator.free(table_entry.decoded_bytes);
@@ -104,6 +110,7 @@ fn insert(self: *Cache, jxl_path: [:0]const u8, bytes: []const u8, mtime: i128) 
     const result = try self.contents.getOrPut(self.allocator, jxl_path);
 
     if (result.found_existing) {
+        std.log.scoped(.cache).debug("replacing entry for {s}", .{jxl_path});
         // replace stale entry
         result.value_ptr.mtime = mtime;
         // this and the earlier addition will correctly adjust the size if the length changed
@@ -139,7 +146,10 @@ fn getValidJpegBytes(self: *Cache, jxl_path: [:0]const u8, mtime: i128) ?[]const
     // we need getEntry so that we can get the key from the hash table and thus update() can use
     // pointer equality on our strings
     const table_entry = self.contents.getEntry(jxl_path) orelse return null;
-    if (table_entry.value_ptr.mtime < mtime) return null;
+    if (table_entry.value_ptr.mtime < mtime) {
+        std.log.scoped(.cache).debug("cache entry is too old: {s}", .{jxl_path});
+        return null;
+    }
 
     // change the timestamp
     self.markRecentlyUsed(table_entry.key_ptr.*) catch unreachable;
@@ -163,6 +173,7 @@ pub fn getJpegBytesFromJxl(self: *Cache, jxl_path: [:0]const u8, mtime: std.os.t
     const mtime_ns = @as(i128, mtime.tv_sec) * std.time.ns_per_s + mtime.tv_nsec;
 
     if (self.getValidJpegBytes(jxl_path, mtime_ns)) |bytes| {
+        std.log.scoped(.cache).debug("cache hit: {s}", .{jxl_path});
         self.hits += 1;
         // getValidJpegBytes should update last use timestamp
         return bytes;
@@ -170,12 +181,19 @@ pub fn getJpegBytesFromJxl(self: *Cache, jxl_path: [:0]const u8, mtime: std.os.t
 
     // now, either there is no existing entry for jxl_path, or it is stale
     const jpeg_bytes = convertJxlToJpeg(self.allocator, jxl_path, self.capacity) catch |e| switch (e) {
-        error.NotJxlFile, error.NotRecompressedJpeg => return null,
-        else => return e,
+        error.NotJxlFile, error.NotRecompressedJpeg => {
+            std.log.scoped(.cache).debug("file not a JXL: {s}", .{jxl_path});
+            return null;
+        },
+        else => {
+            std.log.scoped(.cache).debug("error reading JXL {s}: {s}", .{ jxl_path, @errorName(e) });
+            return e;
+        },
     };
     errdefer self.allocator.free(jpeg_bytes);
 
     try self.insert(jxl_path, jpeg_bytes, mtime_ns);
+    std.log.scoped(.cache).debug("cache miss: {s}", .{jxl_path});
     self.misses += 1;
     return jpeg_bytes;
 }

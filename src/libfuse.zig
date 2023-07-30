@@ -96,7 +96,7 @@ fn errorToErrno(input: anytype) i32 {
         error.NotOpenForReading => .BADF,
         error.Unseekable => .SPIPE,
         error.Unexpected => blk: {
-            std.log.err("unexpected errno\n", .{});
+            std.log.scoped(.fuse).err("unexpected errno\n", .{});
             break :blk @enumFromInt(255);
         },
         // these errors don't have corresponding errnos in zig std and may be windows-only
@@ -107,7 +107,7 @@ fn errorToErrno(input: anytype) i32 {
         error.OperationAborted,
         error.NetNameDeleted,
         => |e| blk: {
-            std.log.err("unexpected error: {s}\n", .{@errorName(e)});
+            std.log.scoped(.fuse).err("unexpected error: {s}\n", .{@errorName(e)});
             break :blk @enumFromInt(255);
         },
     };
@@ -176,7 +176,7 @@ pub fn generateFuseOps(
         }
 
         fn fuseGetAttr(path: ?[*:0]const u8, statbuf: ?*c.struct_stat) callconv(.C) c_int {
-            std.log.info("getattr: {?s}", .{path});
+            std.log.scoped(.fuse).debug("getattr: {?s}", .{path});
             const stat = implementations.getAttr.?(
                 getPrivateData(),
                 std.mem.span(path.?),
@@ -187,14 +187,14 @@ pub fn generateFuseOps(
         }
 
         fn fuseReadlink(path: ?[*:0]const u8, link: ?[*]u8, size: usize) callconv(.C) c_int {
-            std.log.info("readlink: {?s}", .{path});
+            std.log.scoped(.fuse).debug("readlink: {?s}", .{path});
             _ = size;
             _ = link;
             return 1;
         }
 
         fn fuseOpen(path: ?[*:0]const u8, fi: ?*c.fuse_file_info) callconv(.C) c_int {
-            std.log.info("open: {?s}", .{path});
+            std.log.scoped(.fuse).debug("open: {?s}", .{path});
             const file = implementations.open.?(
                 getPrivateData(),
                 std.mem.span(path.?),
@@ -210,7 +210,7 @@ pub fn generateFuseOps(
             offset: c.off_t,
             fi: ?*c.fuse_file_info,
         ) callconv(.C) c_int {
-            std.log.info("read: {?s}, {} bytes, offset {}", .{ path, size, offset });
+            std.log.scoped(.fuse).debug("read: {?s}, {} bytes, offset {}", .{ path, size, offset });
             var handle = readHandle(FileHandle, fi.?);
             defer storeHandle(FileHandle, fi.?, handle);
             const amount_read = implementations.read.?(
@@ -224,7 +224,7 @@ pub fn generateFuseOps(
         }
 
         fn fuseRelease(path: ?[*:0]const u8, fi: ?*c.fuse_file_info) callconv(.C) c_int {
-            std.log.info("release: {?s}", .{path});
+            std.log.scoped(.fuse).debug("release: {?s}", .{path});
             var handle = readHandle(FileHandle, fi.?);
             defer storeHandle(FileHandle, fi.?, handle);
             implementations.release.?(
@@ -241,21 +241,21 @@ pub fn generateFuseOps(
             value: ?[*]u8,
             size: usize,
         ) callconv(.C) c_int {
-            std.log.info("getxattr: {?s}, name: {?s}", .{ path, name });
+            std.log.scoped(.fuse).debug("getxattr: {?s}, name: {?s}", .{ path, name });
             _ = size;
             _ = value;
             return 1;
         }
 
         fn fuseListXattr(path: ?[*:0]const u8, list: ?[*]u8, size: usize) callconv(.C) c_int {
-            std.log.info("listxattr: {?s}", .{path});
+            std.log.scoped(.fuse).debug("listxattr: {?s}", .{path});
             _ = size;
             _ = list;
             return 1;
         }
 
         fn fuseOpenDir(path: ?[*:0]const u8, fi: ?*c.fuse_file_info) callconv(.C) c_int {
-            std.log.info("opendir: {?s}", .{path});
+            std.log.scoped(.fuse).debug("opendir: {?s}", .{path});
             const dir = implementations.openDir.?(
                 getPrivateData(),
                 std.mem.span(path.?),
@@ -265,7 +265,7 @@ pub fn generateFuseOps(
         }
 
         fn fuseReleaseDir(path: ?[*:0]const u8, fi: ?*c.fuse_file_info) callconv(.C) c_int {
-            std.log.info("releasedir: {?s}", .{path});
+            std.log.scoped(.fuse).debug("releasedir: {?s}", .{path});
             var handle = readHandle(DirectoryHandle, fi.?);
             defer storeHandle(DirectoryHandle, fi.?, handle);
             implementations.releaseDir.?(
@@ -284,7 +284,7 @@ pub fn generateFuseOps(
             fi: ?*c.fuse_file_info,
         ) callconv(.C) c_int {
             _ = offset;
-            std.log.info("readdir: {?s}", .{path});
+            std.log.scoped(.fuse).debug("readdir: {?s}", .{path});
 
             var handle = readHandle(DirectoryHandle, fi.?);
             defer storeHandle(DirectoryHandle, fi.?, handle);
@@ -298,17 +298,17 @@ pub fn generateFuseOps(
         }
 
         fn fuseDestroy(userdata: ?*anyopaque) callconv(.C) void {
-            std.log.info("destroy", .{});
+            std.log.scoped(.fuse).debug("destroy", .{});
             _ = userdata;
         }
 
         fn fuseAccess(path: ?[*:0]const u8, mask: c_int) callconv(.C) c_int {
-            std.log.info("access: {?s}, mask {o}", .{ path, mask });
+            std.log.scoped(.fuse).debug("access: {?s}, mask {o}", .{ path, mask });
             return -1;
         }
 
         fn fuseStatfs(path: ?[*:0]const u8, statv: ?*c.struct_statvfs) callconv(.C) c_int {
-            std.log.info("statfs: {?s}", .{path});
+            std.log.scoped(.fuse).debug("statfs: {?s}", .{path});
             _ = statv;
             return 1;
         }

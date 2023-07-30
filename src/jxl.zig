@@ -33,25 +33,25 @@ const Buffers = struct {
     pub fn release(self: *Buffers, dec: *libjxl.Decoder) void {
         const unwritten_bytes = dec.releaseJpegBuffer();
         const bytes_in_last_chunk = self.last_chunk.len - unwritten_bytes;
-        std.log.info("libjxl gave us {} bytes", .{bytes_in_last_chunk});
+        std.log.scoped(.jxl).info("libjxl gave us {} bytes", .{bytes_in_last_chunk});
         if (self.full_buffer.len >= 16) {
-            std.log.info("first few bytes: {x:0>32}", .{std.mem.nativeToBig(u128, @as(u128, @bitCast(self.full_buffer[0..16].*)))});
+            std.log.scoped(.jxl).info("first few bytes: {x:0>32}", .{std.mem.nativeToBig(u128, @as(u128, @bitCast(self.full_buffer[0..16].*)))});
         }
         const before_last_chunk = self.full_buffer.len - self.last_chunk.len;
         self.used_buffer = self.full_buffer[0..(before_last_chunk + bytes_in_last_chunk)];
 
-        std.log.info("{} byte hash = {x:0>16}", .{ self.full_buffer.len, std.hash.XxHash64.hash(0, self.full_buffer) });
+        std.log.scoped(.jxl).info("{} byte hash = {x:0>16}", .{ self.full_buffer.len, std.hash.XxHash64.hash(0, self.full_buffer) });
     }
 
     /// returns the chunk that can be provided to libjxl
     pub fn provideMoreRoom(self: *Buffers, dec: *libjxl.Decoder, size_hint: ?usize) ![]u8 {
         self.release(dec);
-        std.log.info("realloc from {}", .{self.full_buffer.len});
+        std.log.scoped(.jxl).info("realloc from {}", .{self.full_buffer.len});
         self.full_buffer = try self.allocator.realloc(
             self.full_buffer,
             @max(size_hint orelse 4096, 2 * self.full_buffer.len),
         );
-        std.log.info("to {}", .{self.full_buffer.len});
+        std.log.scoped(.jxl).info("to {}", .{self.full_buffer.len});
         self.used_buffer.ptr = self.full_buffer.ptr;
         self.last_chunk = self.full_buffer[self.used_buffer.len..];
         return self.last_chunk;
@@ -91,7 +91,7 @@ pub fn jxlToJpeg(jxl_buffer: []const u8, allocator: std.mem.Allocator) ![]u8 {
                 bufs.release(&decoder);
             },
             else => {
-                std.log.err("unexpected decoder status: {s}", .{@tagName(status)});
+                std.log.scoped(.jxl).err("unexpected decoder status: {s}", .{@tagName(status)});
                 return error.UnexpectedStatus;
             },
         }

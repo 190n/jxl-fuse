@@ -4,6 +4,13 @@ const jxl = @import("./jxl.zig");
 const libfuse = @import("./libfuse.zig");
 const fuse = @import("./fuse.zig");
 
+pub const std_options = struct {
+    pub const log_scope_levels = &.{
+        .{ .scope = .jxl, .level = .err },
+        .{ .scope = .fuse, .level = .err },
+    };
+};
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = if (std.debug.runtime_safety)
