@@ -34,7 +34,7 @@ pub fn signatureCheck(buf: []const u8) Signature {
 }
 
 fn libjxlAlloc(context: ?*anyopaque, size: usize) callconv(.C) ?*anyopaque {
-    const allocator = @as(*std.mem.Allocator, @alignCast(@ptrCast(context.?))).*;
+    const allocator = @as(*const std.mem.Allocator, @alignCast(@ptrCast(context.?))).*;
     const new_size = @sizeOf(usize) + size;
     const slice = allocator.alignedAlloc(u8, @alignOf(usize), new_size) catch return null;
     @as(*usize, @ptrCast(slice.ptr)).* = size;
@@ -43,7 +43,7 @@ fn libjxlAlloc(context: ?*anyopaque, size: usize) callconv(.C) ?*anyopaque {
 
 fn libjxlFree(context: ?*anyopaque, maybe_address: ?*anyopaque) callconv(.C) void {
     if (maybe_address) |address| {
-        const allocator = @as(*std.mem.Allocator, @alignCast(@ptrCast(context.?))).*;
+        const allocator = @as(*const std.mem.Allocator, @alignCast(@ptrCast(context.?))).*;
         const many_ptr: [*]u8 = @ptrCast(address);
         const size_ptr: *usize = @alignCast(@ptrCast(many_ptr - @sizeOf(usize)));
         const size = size_ptr.*;
