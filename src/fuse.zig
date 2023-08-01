@@ -81,8 +81,10 @@ pub fn getAttr(private_data: *FusePrivateData, path: [:0]const u8) !std.os.Stat 
         std.os.linux.AT.SYMLINK_NOFOLLOW,
     );
 
-    if (private_data.cache.getJpegBytesFromJxl(real_path, stat.mtim) catch null) |bytes| {
-        stat.size = @intCast(bytes.len);
+    if (std.os.S.ISREG(stat.mode)) {
+        if (private_data.cache.getJpegBytesFromJxl(real_path, stat.mtim) catch null) |bytes| {
+            stat.size = @intCast(bytes.len);
+        }
     }
     return stat;
 }
