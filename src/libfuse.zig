@@ -150,6 +150,8 @@ pub fn FuseOps(
     };
 }
 
+const EINVAL: i32 = @intFromEnum(std.os.E.INVAL);
+
 pub fn generateFuseOps(
     comptime PrivateData: type,
     comptime FileHandle: type,
@@ -179,10 +181,10 @@ pub fn generateFuseOps(
             std.log.scoped(.fuse).debug("getattr: {?s}", .{path});
             const stat = implementations.getAttr.?(
                 getPrivateData(),
-                std.mem.span(path.?),
+                std.mem.span(path orelse return -EINVAL),
             ) catch |e| return errorToErrno(e);
             comptime assertLayoutsCompatible(c.struct_stat, std.os.Stat);
-            statbuf.?.* = @bitCast(stat);
+            (statbuf orelse return -EINVAL).* = @bitCast(stat);
             return 0;
         }
 
@@ -197,7 +199,7 @@ pub fn generateFuseOps(
             std.log.scoped(.fuse).debug("open: {?s}", .{path});
             const file = implementations.open.?(
                 getPrivateData(),
-                std.mem.span(path.?),
+                std.mem.span(path orelse return -EINVAL),
             ) catch |e| return errorToErrno(e);
             storeHandle(FileHandle, fi.?, file);
             return 0;
@@ -215,9 +217,9 @@ pub fn generateFuseOps(
             defer storeHandle(FileHandle, fi.?, handle);
             const amount_read = implementations.read.?(
                 getPrivateData(),
-                std.mem.span(path.?),
-                buf.?[0..size],
-                std.math.cast(usize, offset) orelse return -@as(i32, @intFromEnum(std.os.E.INVAL)),
+                std.mem.span(path orelse return -EINVAL),
+                (buf orelse return -EINVAL)[0..size],
+                std.math.cast(usize, offset) orelse return -EINVAL,
                 &handle,
             ) catch |e| return errorToErrno(e);
             return @intCast(amount_read);
@@ -229,7 +231,7 @@ pub fn generateFuseOps(
             defer storeHandle(FileHandle, fi.?, handle);
             implementations.release.?(
                 getPrivateData(),
-                std.mem.span(path.?),
+                std.mem.span(path orelse return -EINVAL),
                 &handle,
             ) catch |e| return errorToErrno(e);
             return 0;
@@ -258,7 +260,7 @@ pub fn generateFuseOps(
             std.log.scoped(.fuse).debug("opendir: {?s}", .{path});
             const dir = implementations.openDir.?(
                 getPrivateData(),
-                std.mem.span(path.?),
+                std.mem.span(path orelse return -EINVAL),
             ) catch |e| return errorToErrno(e);
             storeHandle(DirectoryHandle, fi.?, dir);
             return 0;
@@ -270,7 +272,7 @@ pub fn generateFuseOps(
             defer storeHandle(DirectoryHandle, fi.?, handle);
             implementations.releaseDir.?(
                 getPrivateData(),
-                std.mem.span(path.?),
+                std.mem.span(path orelse return -EINVAL),
                 &handle,
             ) catch |e| return errorToErrno(e);
             return 0;
@@ -290,7 +292,7 @@ pub fn generateFuseOps(
             defer storeHandle(DirectoryHandle, fi.?, handle);
             implementations.readDir.?(
                 getPrivateData(),
-                std.mem.span(path.?),
+                std.mem.span(path orelse return -EINVAL),
                 Filler{ .buf = buf, .filler = filler.? },
                 &handle,
             ) catch |e| return errorToErrno(e);
