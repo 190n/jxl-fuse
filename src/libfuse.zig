@@ -106,6 +106,7 @@ fn errorToErrno(input: anytype) i32 {
         error.InvalidUtf8,
         error.OperationAborted,
         error.NetNameDeleted,
+        error.NetworkNotFound,
         => |e| blk: {
             std.log.scoped(.fuse).err("unexpected error: {s}\n", .{@errorName(e)});
             break :blk @enumFromInt(255);

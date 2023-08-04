@@ -27,8 +27,8 @@ pub fn build(b: *std.Build) void {
     exe.linkSystemLibrary("jxl");
     exe.linkSystemLibrary("fuse");
     exe.linkLibC();
-    exe.addCSourceFile("src/file_info_helper.c", &.{});
-    exe.addIncludePath("src");
+    exe.addCSourceFiles(&.{"src/file_info_helper.c"}, &.{});
+    exe.addIncludePath(std.build.LazyPath.relative("src"));
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
@@ -69,8 +69,8 @@ pub fn build(b: *std.Build) void {
     unit_tests.linkSystemLibrary("jxl");
     unit_tests.linkSystemLibrary("fuse");
     unit_tests.linkLibC();
-    unit_tests.addCSourceFile("src/file_info_helper.c", &.{});
-    unit_tests.addIncludePath("src");
+    unit_tests.addCSourceFiles(&.{"src/file_info_helper.c"}, &.{});
+    unit_tests.addIncludePath(std.build.LazyPath.relative("src"));
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
 
